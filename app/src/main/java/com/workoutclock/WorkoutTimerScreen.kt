@@ -48,15 +48,26 @@ fun WorkoutTimerScreen(viewModel: WorkoutTimerViewModel = viewModel()) {
     
     // Animated opacity for UI elements when timer is running
     val uiElementsOpacity by animateFloatAsState(
-        targetValue = if (uiState.isRunning) 0.3f else 1f,
+        targetValue = if (uiState.isRunning) 0.6f else 1f,
         animationSpec = tween(durationMillis = 500),
         label = "ui_opacity"
     )
     
-    // Initialize DND manager
+    // Initialize DND manager and check permissions
+    val dndManager = remember { DNDManager(context) }
+    var hasDNDPermission by remember { mutableStateOf(false) }
+    
     LaunchedEffect(Unit) {
-        val dndManager = DNDManager(context)
         viewModel.setDNDManager(dndManager)
+        hasDNDPermission = dndManager.hasPermission()
+    }
+    
+    // Prompt DND permission if Focus mode selected without permission
+    LaunchedEffect(uiState.appMode) {
+        if (uiState.appMode == AppMode.FOCUS && !hasDNDPermission && !uiState.isRunning) {
+            dndManager.requestPermission()
+            hasDNDPermission = dndManager.hasPermission()
+        }
     }
     
     // Vibrate and play sound when phase changes
@@ -109,9 +120,23 @@ fun WorkoutTimerScreen(viewModel: WorkoutTimerViewModel = viewModel()) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Mode selector pills
+        // Mode selector pills with DND status for Focus mode
         Box(modifier = Modifier.alpha(uiElementsOpacity)) {
-            ModeSelectorPills(viewModel, uiState)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ModeSelectorPills(viewModel, uiState)
+                // DND permission status indicator
+                if (uiState.appMode == AppMode.FOCUS) {
+                    Text(
+                        text = if (hasDNDPermission) "✓ DND enabled" else "⚠ DND permission required",
+                        fontSize = 12.sp,
+                        color = if (hasDNDPermission) Color(0xFF4CAF50) else Color(0xFFFF9800),
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -132,38 +157,6 @@ fun WorkoutTimerScreen(viewModel: WorkoutTimerViewModel = viewModel()) {
 
 @Composable
 fun CircularTimerWithSwipe(viewModel: WorkoutTimerViewModel, uiState: WorkoutTimerState) {
-    val context = LocalContext.current
-    
-    // Vibrate and play sound when phase changes
-    LaunchedEffect(uiState.currentPhase) {
-        if (uiState.isRunning) {
-            // Vibration
-            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(300)
-            }
-            
-            // Play custom sound based on phase
-            try {
-                val soundResource = when (uiState.currentPhase) {
-                    TimerPhase.WORKOUT -> R.raw.workout_beep
-                    TimerPhase.REST -> R.raw.rest_beep
-                }
-                
-                val mediaPlayer = MediaPlayer.create(context, soundResource)
-                mediaPlayer?.start()
-                mediaPlayer?.setOnCompletionListener {
-                    it.release()
-                }
-            } catch (e: Exception) {
-                // Fallback: just vibrate if sound fails
-            }
-        }
-    }
-
     Box(
         modifier = Modifier
             .size(300.dp)
